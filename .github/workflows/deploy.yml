@@ -67,9 +67,9 @@ jobs:
         with:
           context: .
           push: true
-          # Oracle's Always Free Ampere A1 VMs are arm64. Set the repository variable
-          # DOCKER_PLATFORMS to linux/amd64 if you use the x86 E2.1.Micro shape instead.
-          platforms: ${{ vars.DOCKER_PLATFORMS || 'linux/arm64' }}
+          # Multi-arch, so the same image runs on Oracle's Ampere A1 (arm64) and the x86
+          # E2.1.Micro (amd64) Always Free shapes. Override with the DOCKER_PLATFORMS variable.
+          platforms: ${{ vars.DOCKER_PLATFORMS || 'linux/amd64,linux/arm64' }}
           tags: |
             ${{ steps.name.outputs.image }}:latest
             ${{ steps.name.outputs.image }}:${{ github.sha }}

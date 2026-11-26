@@ -17,11 +17,25 @@ On the VM, two containers run: `app` (the game server, rooms saved in a Docker v
 In the Oracle Cloud console: **Compute → Instances → Create instance**.
 
 - **Image:** Canonical Ubuntu 24.04.
-- **Shape:** Ampere `VM.Standard.A1.Flex` (Always Free eligible; 1 OCPU / 6 GB is plenty).
-  If you pick the x86 `VM.Standard.E2.1.Micro` instead, set the repository variable
-  `DOCKER_PLATFORMS=linux/amd64` (step 4).
+- **Shape:** Ampere `VM.Standard.A1.Flex` (Always Free eligible; 1 OCPU / 6 GB is plenty), or the
+  x86 `VM.Standard.E2.1.Micro` (1 GB RAM, also enough for this server). The image is built for
+  both CPU types, so no settings change between them.
 - **Networking:** a public subnet, with "Assign a public IPv4 address" checked.
 - **SSH keys:** upload your own public key (for you to log in).
+
+### "Out of capacity for shape VM.Standard.A1.Flex"
+
+Free Ampere capacity is often exhausted in popular regions. Options, roughly in order:
+
+1. **Try the other availability domains** (AD-2, AD-3) in the Placement section, if your region
+   has them. Don't pick a fault domain.
+2. **Ask for less:** 1 OCPU / 6 GB instead of the 4 / 24 maximum.
+3. **Retry later.** Capacity frees up unpredictably; early morning in the region's time zone often
+   works. People also script retries with the OCI CLI (`oci compute instance launch` in a loop).
+4. **Use the x86 `VM.Standard.E2.1.Micro`** shape instead (Always Free, usually available).
+   1 GB RAM is enough for this server; no repo changes are needed.
+5. **Upgrade the account to Pay As You Go.** Always Free resources stay free, and PAYG accounts
+   get priority for A1 capacity. Set a budget alert in case anything non-free is created.
 
 ### Open ports 80 and 443
 
@@ -82,7 +96,7 @@ gh secret set OCI_SSH_KEY < ~/.ssh/pandemic_deploy
 |---|---|
 | `DEPLOY_ENABLED` | `true`. The deploy job is skipped until this is set, so pushes before the VM is ready still test and build. |
 | `SITE_ADDRESS` | optional. A domain name pointing at the VM (an `A` record to its IP), e.g. `pandemic.example.com`, for automatic HTTPS. Leave unset to serve plain HTTP at `http://<VM_IP>/`. |
-| `DOCKER_PLATFORMS` | optional. `linux/amd64` for the x86 Micro shape; default is `linux/arm64`. |
+| `DOCKER_PLATFORMS` | optional. Default `linux/amd64,linux/arm64`; set one to speed up builds. |
 
 Then push to `main` (or **Actions → Test, build and deploy → Run workflow**) and open
 `http://<VM_IP>/` (or `https://<your domain>/`).
