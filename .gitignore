@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+web/dist/
+web/node_modules/
+
+# Local-only
+Pandemic_Rules.md
+.deploy-test/
+.env
+.playwright-mcp/

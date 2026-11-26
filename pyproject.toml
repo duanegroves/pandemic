@@ -1,0 +1,48 @@
+[project]
+name = "pandemic"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.165.0",
+    "uvicorn[standard]>=0.54.0",
+]
+ai = [
+    "gymnasium>=1.4.0",
+    "numpy>=2.4.6",
+    "pettingzoo>=1.27.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+    "httpx>=0.28.1",
+    "fastapi>=0.165.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pandemic"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]
+ignore = ["UP042"]  # keep (str, Enum): str() of members must stay stable
+
+[tool.ruff.lint.isort]
+known-first-party = ["pandemic"]
+known-local-folder = ["helpers"]

@@ -1,0 +1,34 @@
+# Runs on the Oracle VM in ~/pandemic. The GitHub Actions deploy job copies this file and the
+# Caddyfile there and writes ~/pandemic/.env with IMAGE (and optionally SITE_ADDRESS).
+services:
+  app:
+    image: ${IMAGE:?set IMAGE in .env}:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PANDEMIC_DATA_DIR: /data
+    volumes:
+      - pandemic-data:/data
+    expose:
+      - "8000"
+
+  # Reverse proxy. With SITE_ADDRESS set to a domain name (e.g. pandemic.example.com) Caddy gets a
+  # free HTTPS certificate automatically; left at ":80" it serves plain HTTP on the VM's IP.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  pandemic-data:
+  caddy-data:
+  caddy-config:

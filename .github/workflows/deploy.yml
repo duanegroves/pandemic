@@ -1,0 +1,122 @@
+name: Test, build and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+      - name: Python lint and tests
+        run: |
+          uv sync --all-extras --python 3.12
+          uv run ruff check
+          uv run pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Frontend tests and build
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+  build:
+    # Only build/push images for pushes to main (and manual runs), not for pull requests.
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name (ghcr requires lowercase)
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Oracle's Always Free Ampere A1 VMs are arm64. Set the repository variable
+          # DOCKER_PLATFORMS to linux/amd64 if you use the x86 E2.1.Micro shape instead.
+          platforms: ${{ vars.DOCKER_PLATFORMS || 'linux/arm64' }}
+          tags: |
+            ${{ steps.name.outputs.image }}:latest
+            ${{ steps.name.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    # Skipped until the VM is set up: set the repository variable DEPLOY_ENABLED=true.
+    if: github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy compose files to the VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          source: deploy/docker-compose.yml,deploy/Caddyfile
+          target: ~/pandemic
+          strip_components: 1
+
+      - name: Pull the new image and restart
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          SITE_ADDRESS: ${{ vars.SITE_ADDRESS || ':80' }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          envs: IMAGE,SITE_ADDRESS,GHCR_USER,GHCR_TOKEN
+          script: |
+            set -eu
+            cd ~/pandemic
+            printf 'IMAGE=%s\nSITE_ADDRESS=%s\n' "$IMAGE" "$SITE_ADDRESS" > .env
+            # The job token is short-lived; it is only used for this pull.
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker logout ghcr.io
+            docker image prune -f
+            docker compose ps
