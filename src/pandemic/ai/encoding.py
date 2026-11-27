@@ -123,48 +123,49 @@ def encode(action: Action, state: GameState, actor: int | None = None) -> int:
     if actor is None:
         actor = _actor(state)
     n = _n(state)
-    t = type(action)
-    if t in _MOVE_SEGS:
+    if isinstance(
+        action, DriveFerry | DirectFlight | CharterFlight | ShuttleFlight | DispatcherMove
+    ):
         rel = (action.pawn - actor) % n
-        return SEGMENTS[_MOVE_SEGS[t]][0] + rel * NC + CITY_INDEX[action.destination]
-    if t is OperationsMove:
+        return SEGMENTS[_MOVE_SEGS[type(action)]][0] + rel * NC + CITY_INDEX[action.destination]
+    if isinstance(action, OperationsMove):
         return (SEGMENTS["ops_move"][0] + CITY_INDEX[action.destination] * NC
                 + CITY_INDEX[action.card])
-    if t is BuildResearchStation:
+    if isinstance(action, BuildResearchStation):
         r = NC if action.relocate_from is None else CITY_INDEX[action.relocate_from]
         return SEGMENTS["build"][0] + r
-    if t is TreatDisease:
+    if isinstance(action, TreatDisease):
         return SEGMENTS["treat"][0] + _COLOR_INDEX[action.color]
-    if t is GiveCard:
+    if isinstance(action, GiveCard):
         return SEGMENTS["give"][0] + ((action.to_player - actor) % n) * NC + CITY_INDEX[action.card]
-    if t is TakeCard:
+    if isinstance(action, TakeCard):
         return (SEGMENTS["take"][0] + ((action.from_player - actor) % n) * NC
                 + CITY_INDEX[action.card])
-    if t is DiscoverCure:
+    if isinstance(action, DiscoverCure):
         return SEGMENTS["cure"][0] + _COLOR_INDEX[action.color]
-    if t is TakeEventCard:
+    if isinstance(action, TakeEventCard):
         return SEGMENTS["take_event"][0] + _EVENT_INDEX[action.card]
-    if t is EndActions:
+    if isinstance(action, EndActions):
         return SEGMENTS["end_actions"][0]
-    if t is Discard:
+    if isinstance(action, Discard):
         return SEGMENTS["discard"][0] + _card_index(action.card)
-    if t is Pass:
+    if isinstance(action, Pass):
         return SEGMENTS["pass"][0]
-    if t is Consent:
+    if isinstance(action, Consent):
         return SEGMENTS["consent"][0] + int(action.accept)
-    if t is PlayAirlift:
+    if isinstance(action, PlayAirlift):
         return (SEGMENTS["airlift"][0] + ((action.pawn - actor) % n) * NC
                 + CITY_INDEX[action.destination])
-    if t is PlayOneQuietNight:
+    if isinstance(action, PlayOneQuietNight):
         return SEGMENTS["one_quiet_night"][0]
-    if t is PlayResilientPopulation:
+    if isinstance(action, PlayResilientPopulation):
         return SEGMENTS["resilient"][0] + CITY_INDEX[action.card]
-    if t is PlayGovernmentGrant:
+    if isinstance(action, PlayGovernmentGrant):
         r = NC if action.relocate_from is None else CITY_INDEX[action.relocate_from]
         return SEGMENTS["grant"][0] + CITY_INDEX[action.city] * (NC + 1) + r
-    if t is PlayForecast:
+    if isinstance(action, PlayForecast):
         return SEGMENTS["forecast"][0]
-    if t is ForecastOrder:
+    if isinstance(action, ForecastOrder):
         raise ValueError("ForecastOrder is decomposed into forecast_slot picks by the env")
     raise ValueError(f"unknown action {action!r}")
 

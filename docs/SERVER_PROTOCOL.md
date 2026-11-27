@@ -2,13 +2,13 @@
 
 Run: `uv run uvicorn pandemic.server.app:app` or `uv run python -m pandemic.server --port 8000`
 (needs the `server` extra: `uv sync --extra server`). Set `PANDEMIC_DATA_DIR=./rooms` to persist
-rooms as JSON snapshots (reloaded at startup). `GET /` serves a debug client.
+rooms as JSON snapshots (reloaded at startup). `GET /` serves the built frontend (`web/dist`).
 
 ## REST
 
 | Request | Body | Response |
 |---|---|---|
-| `POST /rooms` | `{"config": {GameConfig fields}, "timeout": seconds\|null, "timeout_consent": bool}` | `{"room_id"}` (422 on bad config) |
+| `POST /rooms` | `{"config": {GameConfig fields}, "timeout": seconds\|null, "timeout_consent": bool}` | `{"room_id"}` (422 on bad config or timeout; 503 when the FastAPI server is full) |
 | `GET /rooms/{id}` | | lobby object (see below); 404 if unknown |
 | `POST /rooms/{id}/join` | `{"name": str, "token": str\|null}` | `{"room_id","seat","token"}`; 409 if full or started |
 
@@ -16,7 +16,7 @@ rooms as JSON snapshots (reloaded at startup). `GET /` serves a debug client.
 `event_windows`. Seats are assigned in join order; seat 0 is the host. The `token` is the
 player's secret: join again with it (or just open the WebSocket) to reconnect.
 `timeout`: seconds before an unanswered `event_window` decision is auto-passed (and, with
-`timeout_consent`, an unanswered `consent` is declined). Timed-out actions are recorded in the
+`timeout_consent`, an unanswered `consent` is declined). `timeout` must be `null` or 5 to 600. Timed-out actions are recorded in the
 action log like any other.
 
 ## WebSocket `/ws/{room_id}?token=...`
@@ -31,7 +31,7 @@ message (before start) or `state` message (after start).
 | `{"type":"ready","ready":true}` | set ready flag (lobby only) |
 | `{"type":"start"}` | host only; needs a full room with everyone ready; server picks the seed |
 | `{"type":"action","action":{...}}` | engine action JSON (see ENGINE_API.md); only the owner of the current decision may act |
-| `{"type":"chat","text":"..."}` | broadcast to all seats |
+| `{"type":"chat","text":"..."}` | broadcast to all seats (500 characters at most) |
 | `{"type":"sync"}` | resend the current lobby/state message to the sender |
 
 ### Server to client
@@ -46,6 +46,9 @@ message (before start) or `state` message (after start).
 - `{"type":"chat","seat","name","text"}`
 - `{"type":"error","code","message"}` sent only to the offending client. Codes: `not_your_turn`,
   `illegal_action`, `bad_action`, `bad_request`, `error`. The game state is unchanged.
+
+Inbound WebSocket messages over 16 KiB are answered with a `bad_request` error and ignored.
+Shared limits and room eviction: [DEPLOY.md](DEPLOY.md#limits-and-housekeeping-both-backends).
 
 ## Persistence
 

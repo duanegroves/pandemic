@@ -9,3 +9,4 @@ pylock.toml
 node_modules/
 .dev.vars
 .venv-workers/
+*.log

@@ -18,12 +18,17 @@ from pandemic.server.rooms import (
     Room,
     RoomError,
     handle_client_message,
+    idle_limit,
+    message_too_large,
     new_room,
     new_room_id,
+    parse_create_request,
 )
 
 ROOM_ID = r"[A-Za-z0-9_-]{1,32}"
 ALARM_SLACK_MS = 25  # fire just after the deadline so Room.tick() sees it as expired
+IDLE_TTL = 7 * 24 * 3600.0  # a room's storage is deleted this long after its last activity
+FINISHED_TTL = 24 * 3600.0  # finished games are cleaned up sooner
 
 
 def now() -> float:
@@ -82,20 +87,14 @@ class Default(WorkerEntrypoint):
             body = json.loads(text) if text else {}
         except ValueError:
             return detail("body must be JSON", 422)
-        if not isinstance(body, dict):
-            return detail("body must be a JSON object", 422)
-        config = body.get("config") or {}
-        timeout = body.get("timeout")
-        if not isinstance(config, dict):
-            return detail("config must be an object", 422)
-        if timeout is not None and (
-            isinstance(timeout, bool) or not isinstance(timeout, int | float) or timeout <= 0
-        ):
-            return detail("timeout must be a positive number or null", 422)
+        try:
+            params = parse_create_request(body)
+        except ValueError as e:
+            return detail(str(e), 422)
         payload = {
-            "config": config,
-            "timeout": timeout,
-            "timeout_consent": bool(body.get("timeout_consent", False)),
+            "config": params.config.to_dict(),
+            "timeout": params.timeout,
+            "timeout_consent": params.timeout_consent,
         }
         for _ in range(5):  # ids are random; a collision (409) just draws another one
             room_id = new_room_id()
@@ -129,6 +128,7 @@ class RoomDO(DurableObject):
         super().__init__(ctx, env)
         self.room = None
         self.loaded = False
+        self.last_active = now()
 
     # ------------------------------------------------------------ state
     async def load(self):
@@ -139,6 +139,7 @@ class RoomDO(DurableObject):
         if raw:
             snap = json.loads(raw)
             room = Room.restore(snap, clock=now)
+            self.last_active = float(snap.get("last_active", now()))
             deadline_at = snap.get("deadline_at")
             if room.deadline is not None and deadline_at is not None:
                 room.deadline = float(deadline_at)  # keep the original wall-clock deadline
@@ -149,13 +150,26 @@ class RoomDO(DurableObject):
     async def save(self):
         snap = self.room.snapshot(CHECKPOINT_EVERY)
         snap["deadline_at"] = self.room.deadline
+        self.last_active = now()
+        snap["last_active"] = self.last_active
         await self.ctx.storage.put("snap", json.dumps(snap))
         await self.arm_alarm()
 
+    def expires_at(self) -> float:
+        """Wall-clock second after which an idle room's storage is deleted."""
+        return self.last_active + idle_limit(self.room, IDLE_TTL, FINISHED_TTL)
+
     async def arm_alarm(self):
-        # A stale alarm firing with no deadline is harmless: tick() finds nothing to do.
-        if self.room is not None and self.room.deadline is not None:
-            await self.ctx.storage.setAlarm(int(self.room.deadline * 1000) + ALARM_SLACK_MS)
+        """One alarm per object: the earlier of the decision deadline and the idle cleanup.
+
+        A stale alarm firing early is harmless: ``alarm`` re-arms itself.
+        """
+        if self.room is None:
+            return
+        due = self.expires_at()
+        if self.room.deadline is not None:
+            due = min(due, self.room.deadline + ALARM_SLACK_MS / 1000)
+        await self.ctx.storage.setAlarm(int(due * 1000))
 
     def sockets_by_seat(self) -> dict:
         out: dict = {}
@@ -187,6 +201,7 @@ class RoomDO(DurableObject):
     # ------------------------------------------------------------ HTTP
     async def fetch(self, request):
         await self.load()
+        self.last_active = now()
         path = url_path(request.url)
         method = str(request.method).upper()
         if path == "/init" and method == "POST":
@@ -210,14 +225,15 @@ class RoomDO(DurableObject):
             return detail("room exists", 409)
         body = await request.json()
         try:
+            params = parse_create_request(body)
             room = new_room(
                 body["room_id"],
-                body.get("config"),
-                body.get("timeout"),
-                bool(body.get("timeout_consent")),
+                params.config,
+                params.timeout,
+                params.timeout_consent,
                 clock=now,
             )
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError, KeyError) as e:
             return detail(str(e), 422)
         self.room = room
         await self.save()
@@ -276,8 +292,11 @@ class RoomDO(DurableObject):
         def reply(code, text):
             ws.send(json.dumps({"type": "error", "code": code, "message": text}))
 
+        self.last_active = now()
         if not isinstance(message, str):
             return reply("bad_request", "binary messages are not supported")
+        if message_too_large(message):
+            return reply("bad_request", "message too large")
         try:
             data = json.loads(message)
         except ValueError:
@@ -307,7 +326,10 @@ class RoomDO(DurableObject):
 
     # ------------------------------------------------------------ timeouts
     async def alarm(self, alarm_info=None):
-        """Auto-pass/decline an expired decision. Safe to run twice: tick() is deadline-gated."""
+        """Auto-pass/decline an expired decision, and delete an idle room's storage.
+
+        Safe to run twice: tick() is deadline-gated and cleanup is time-gated.
+        """
         await self.load()
         if self.room is None:
             return
@@ -315,5 +337,12 @@ class RoomDO(DurableObject):
         if msgs:
             await self.save()
             self.send(msgs)
-        else:
-            await self.arm_alarm()  # fired early (or retried after the work was done)
+            return
+        if now() >= self.expires_at():
+            if self.ctx.getWebSockets():
+                self.last_active = now()  # someone is still connected: not idle
+            else:
+                await self.ctx.storage.deleteAll()  # also clears the alarm
+                self.room = None
+                return
+        await self.arm_alarm()  # fired early (or retried after the work was done)

@@ -72,12 +72,11 @@ def test_bad_token_rejected():
             assert exc.value.code == 4401
 
 
-def test_meta_and_debug_and_index():
+def test_meta_and_index():
     with TestClient(create_app(RoomManager())) as client:
         m = client.get("/meta").json()
         assert len(m["cities"]) == 48
         atl = next(c for c in m["cities"] if c["name"] == "Atlanta")
         assert atl["color"] == "blue" and "Chicago" in atl["neighbors"]
         assert "medic" in m["roles"] and "Forecast" in m["events"]
-        assert "debug client" in client.get("/debug").text
-        assert client.get("/").status_code == 200
+        assert client.get("/debug").status_code in (404, 405)

@@ -181,6 +181,15 @@ async def s_rest_basics():
     check(status == 404, f"unknown room join should 404, got {status}")
     status, _ = http("POST", "/rooms", {"config": {"num_players": 9}})
     check(status == 422, f"bad config should 422, got {status}")
+    for bad in (1, 4.9, 601, 0, -3, "10", True):
+        status, _ = http("POST", "/rooms", {"timeout": bad})
+        check(status == 422, f"timeout {bad!r} should 422, got {status}")
+    status, _ = http("POST", "/rooms", {"timeout": 5})
+    check(status == 200, f"timeout 5 should be accepted, got {status}")
+    status, _ = http("POST", "/rooms", {"config": [1, 2]})
+    check(status == 422, f"non-object config should 422, got {status}")
+    status, _ = http("POST", "/rooms", {"config": {"bogus_field": 1}})
+    check(status == 422, f"unknown config field should 422, got {status}")
     status, body = http("POST", "/rooms", {"config": {"num_players": 2}})
     check(status == 200 and isinstance(body["room_id"], str) and body["room_id"])
     status, lobby = http("GET", f"/rooms/{body['room_id']}")
@@ -279,6 +288,23 @@ async def s_lobby_flow():
         await b.close()
 
 
+async def s_message_limits():
+    """Oversized messages get an error and are ignored; the chat log is capped (not visible)."""
+    rid, clients = await new_room(2)
+    try:
+        c = clients[0]
+        await c.drain(0.5)
+        await c.send(type="chat", text="x" * 20000)
+        m = await c.recv_until(lambda m: m["type"] == "error")
+        check(m["code"] == "bad_request" and "large" in m["message"], m)
+        await c.send(type="chat", text="still works")  # connection survives
+        m = await c.recv_until(lambda m: m["type"] == "chat")
+        check(m["text"] == "still works", m)
+    finally:
+        for c in clients:
+            await c.close()
+
+
 async def s_errors_to_sender_only():
     rid, clients = await new_room(2)
     try:
@@ -348,7 +374,7 @@ async def s_timeout_auto_pass():
     """A room with a short timeout auto-passes an unanswered event_window decision."""
     rng = random.Random(3)
     for _attempt in range(12):
-        rid, clients = await new_room_cfg(3, 1.5)
+        rid, clients = await new_room_cfg(3, 5)
         try:
             await start_game(clients)
             for _ in range(300):
@@ -357,18 +383,18 @@ async def s_timeout_auto_pass():
                 if s["phase"] == "over":
                     break
                 if s["decision"]["kind"] == "event_window":
-                    check(s["deadline_in"] is not None and 0 < s["deadline_in"] <= 1.5,
+                    check(s["deadline_in"] is not None and 0 < s["deadline_in"] <= 5,
                           f"deadline_in {s['deadline_in']}")
                     before = json.dumps([s["observation"], s["decision"]], sort_keys=True)
                     t0 = time.monotonic()
                     for c in clients:
                         c.latest.pop("state", None)
                     for c in clients:
-                        m = await c.recv_until(lambda m: m["type"] == "state", timeout=8)
+                        m = await c.recv_until(lambda m: m["type"] == "state", timeout=12)
                     waited = time.monotonic() - t0
                     after = json.dumps([m["observation"], m["decision"]], sort_keys=True)
                     check(after != before, "state unchanged after timeout")
-                    check(waited <= 1.5 + 3, f"auto-pass came too late ({waited:.2f}s)")
+                    check(waited <= 5 + 3, f"auto-pass came too late ({waited:.2f}s)")
                     print(f"      (auto-passed after {waited:.1f}s)", end="")
                     return
                 if not await play_action(clients, rng):
@@ -465,6 +491,7 @@ SCENARIOS = [
     ("join_reconnect_by_token", s_join_reconnect),
     ("ws_bad_token_4401", s_ws_bad_token),
     ("lobby_flow_chat_connected", s_lobby_flow),
+    ("message_limits", s_message_limits),
     ("errors_to_sender_only", s_errors_to_sender_only),
     ("full_game_and_redaction", s_full_game_and_redaction),
     ("timeout_auto_pass", s_timeout_auto_pass),

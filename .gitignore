@@ -1,3 +1,4 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
@@ -6,8 +7,19 @@ __pycache__/
 .mypy_cache/
 *.egg-info/
 dist/
+
+# Web
 web/dist/
 web/node_modules/
+web/.vite/
+web/*.tsbuildinfo
+web/coverage/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.log
 
 # Local-only
 Pandemic_Rules.md

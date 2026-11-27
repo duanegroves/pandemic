@@ -40,7 +40,7 @@ from pandemic.engine.board import (
     remove_cubes,
 )
 from pandemic.engine.endgame import LOSS_PLAYER_DECK, check_win, lose
-from pandemic.engine.events import apply_forecast, has_playable, play_event
+from pandemic.engine.event_cards import apply_forecast, has_playable, play_event
 from pandemic.engine.game_events import (
     ActionsEnded,
     CardTransferred,

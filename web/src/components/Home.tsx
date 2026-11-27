@@ -126,7 +126,7 @@ export function Home({ onEnter }: { onEnter: Enter }) {
             Require consent for card sharing and moving other pawns
           </label>
           <label className="field">
-            Timeout for unanswered prompts (seconds, optional)
+            Timeout for unanswered prompts (5-600 seconds, optional)
             <input
               value={timeout}
               onChange={(e) => setTimeoutS(e.target.value)}

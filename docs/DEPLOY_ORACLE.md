@@ -2,14 +2,10 @@
 
 Part of the deployment options in `docs/DEPLOY.md`. The Cloudflare option is in `docs/CLOUDFLARE.md`.
 
-Every push to `main` runs `.github/workflows/deploy.yml`:
-
-1. **test**: Python lint and tests, frontend tests and build.
-2. **build**: builds the Docker image (`Dockerfile`: React build + Python server) for
-   `linux/arm64` and pushes it to GitHub Container Registry as `ghcr.io/<owner>/<repo>:latest`
-   (and `:<commit sha>`).
-3. **deploy**: copies `deploy/docker-compose.yml` and `deploy/Caddyfile` to `~/pandemic` on the VM
-   over SSH, then runs `docker compose pull && docker compose up -d`.
+The CI jobs that build the image and deploy it are described in [DEPLOY.md](DEPLOY.md#cicd)
+(`.github/workflows/ci.yml`): `build` pushes a multi-arch image (`linux/amd64`, `linux/arm64`) to
+`ghcr.io/<owner>/<repo>`, and `deploy` copies `deploy/docker-compose.yml` and `deploy/Caddyfile` to
+`~/pandemic` on the VM over SSH, then runs `docker compose pull && docker compose up -d`.
 
 On the VM, two containers run: `app` (the game server, rooms saved in a Docker volume) and `caddy`
 (reverse proxy on ports 80/443, with automatic HTTPS if you give it a domain name).
@@ -100,7 +96,7 @@ gh secret set OCI_SSH_KEY < ~/.ssh/pandemic_deploy
 | `SITE_ADDRESS` | optional. A domain name pointing at the VM (an `A` record to its IP), e.g. `pandemic.example.com`, for automatic HTTPS. Leave unset to serve plain HTTP at `http://<VM_IP>/`. |
 | `DOCKER_PLATFORMS` | optional. Default `linux/amd64,linux/arm64`; set one to speed up builds. |
 
-Then push to `main` (or **Actions → Test, build and deploy → Run workflow**) and open
+Then push to `main` (or **Actions → CI → Run workflow**) and open
 `http://<VM_IP>/` (or `https://<your domain>/`).
 
 ## Operating it
@@ -120,9 +116,25 @@ docker compose restart app
 - The image is private by default (it inherits the repo's visibility). The deploy job logs the VM
   in with a short-lived token for each pull, so nothing long-lived is stored on the VM.
 
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `curl` times out | Port 80 blocked: Security List ingress rule or iptables on the VM (Oracle Ubuntu images reject by default). |
+| deploy job: `ssh: handshake failed` / `unable to authenticate` | Public key not in `~/.ssh/authorized_keys` for `OCI_USER`, or the wrong username. |
+| deploy job: `permission denied ... docker.sock` | User isn't in the `docker` group: `sudo usermod -aG docker <user>`, then reconnect. |
+| deploy job: `docker compose: unknown command` | Install `docker-compose-v2` (Ubuntu) or the compose plugin. |
+| `exec format error` in `docker compose logs app` | Image/CPU mismatch; check `DOCKER_PLATFORMS` isn't set to the wrong arch. |
+| HTTPS doesn't work with a domain | DNS A record not pointing at the VM yet, or port 443 not open. Caddy logs: `docker compose logs caddy`. |
+
+After the first deploy, check `curl -s -o /dev/null -w '%{http_code}\n' http://<VM_IP>/` (expect
+`200`) and `curl -s http://<VM_IP>/meta | head -c 80`, then run a scripted game:
+`cd web && node scripts/play.mjs --base http://<VM_IP> --games 1`.
+
 ## Notes
 
-- There are no accounts: anyone with the URL can create a room, and anyone with a room code can
-  join an open seat. Fine for friends; don't post the URL publicly.
+- The server limits (room cap, idle eviction, message sizes) and the no-accounts model are
+  described in [DEPLOY.md](DEPLOY.md#limits-and-housekeeping-both-backends). Don't post the URL
+  publicly.
 - Without a domain, traffic is unencrypted HTTP. Free options for a domain name include
   DuckDNS (`yourname.duckdns.org`), which works with Caddy's automatic HTTPS.

@@ -23,7 +23,7 @@ from pandemic.engine.actions import (
     TakeCard,
     TreatDisease,
 )
-from pandemic.engine.events import RP_ONLY, event_actions
+from pandemic.engine.event_cards import RP_ONLY, event_actions
 from pandemic.engine.roles import behavior
 from pandemic.engine.state import (
     ACTIONS,

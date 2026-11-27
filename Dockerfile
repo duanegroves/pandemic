@@ -12,15 +12,21 @@ RUN npm run build
 
 # ---- Stage 2: Python server ------------------------------------------------------------------
 FROM python:3.12-slim AS app
+# uv, pinned, from its official image. Dependencies come from uv.lock, so images are reproducible.
+COPY --from=ghcr.io/astral-sh/uv:0.13.10 /uv /usr/local/bin/uv
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=0 \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
 
-COPY pyproject.toml ./
+# Dependencies first (cached unless pyproject.toml or uv.lock change), then the project itself.
+COPY pyproject.toml uv.lock README.md LICENSE ./
+RUN uv sync --frozen --no-dev --extra server --no-install-project
 COPY src/ ./src/
-RUN pip install ".[server]"
+RUN uv sync --frozen --no-dev --extra server --no-editable
 
 COPY --from=web /web/dist /app/web/dist
 

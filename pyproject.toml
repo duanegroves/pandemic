@@ -1,7 +1,11 @@
 [project]
 name = "pandemic"
 version = "0.1.0"
-requires-python = ">=3.11"
+description = "Cooperative Pandemic board game: rules engine, RL environments and a multiplayer web server (unofficial fan project)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
@@ -21,9 +25,8 @@ dev = [
     "ruff",
     "mypy",
     "httpx>=0.28.1",
-    "fastapi>=0.165.0",
-    "uvicorn[standard]>=0.54.0",
 ]
+# The server and ai extras are installed with `uv sync --all-extras` (used by CI and CLAUDE.md).
 
 [build-system]
 requires = ["hatchling"]
@@ -35,6 +38,15 @@ packages = ["src/pandemic"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+disable_error_code = ["annotation-unchecked"]
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["pettingzoo", "pettingzoo.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

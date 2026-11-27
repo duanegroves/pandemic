@@ -3,7 +3,7 @@
   "main": "src/entry.py",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["python_workers"],
-  // `public/` is built by scripts/sync.sh: web/dist plus the debug client at /debug/.
+  // `public/` is built by scripts/sync.sh: web/dist (the built frontend).
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
@@ -13,6 +13,6 @@
     "run_worker_first": ["/rooms", "/rooms/*", "/meta", "/ws/*"]
   },
   "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "RoomDO" }] },
-  // Keep v1 as-is: it is the migration the spike already applied to this Worker name.
+  // Keep v1 as-is: it is the migration the first deploy already applied to this Worker name; do not renumber it.
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO"] }]
 }

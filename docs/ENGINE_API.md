@@ -1,7 +1,9 @@
 # Pandemic Engine API (`pandemic.engine`)
 
 The engine is a pure-Python, deterministic state machine. It does not depend on any UI, RL or
-server code. Everything below is re-exported from `pandemic.engine`.
+server code. Everything below is re-exported from `pandemic.engine`. Module naming: `event_cards.py`
+implements the five event *cards* (Airlift, Forecast, ...); `game_events.py` defines the domain
+events that `step` emits (see "Domain events" below).
 
 ```python
 from pandemic.engine import GameConfig, new_game, current_decision, legal_actions, step, observe

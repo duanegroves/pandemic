@@ -210,7 +210,7 @@ class PandemicAECEnv(AECEnv):
         self._cumulative_rewards = dict.fromkeys(self.agents, 0.0)
         self.terminations = dict.fromkeys(self.agents, False)
         self.truncations = dict.fromkeys(self.agents, False)
-        self.infos = {a: {} for a in self.agents}
+        self.infos: dict[str, dict] = {a: {} for a in self.agents}
         self._select()
 
     def observe(self, agent: str) -> dict[str, np.ndarray]:

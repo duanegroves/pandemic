@@ -37,13 +37,21 @@ from pandemic.engine import (
 Outbound = tuple[int, dict]
 Clock = Callable[[], float]
 
-MAX_CHAT = 500
+MAX_CHAT = 500  # characters per chat message
+MAX_CHAT_LOG = 100  # chat messages kept per room (oldest dropped)
+MAX_MESSAGE_BYTES = 16 * 1024  # inbound WebSocket message limit
+MIN_TIMEOUT = 5.0  # seconds; bounds for a room's decision timeout
+MAX_TIMEOUT = 600.0
 # Snapshots carry a state checkpoint once this many actions have passed since the last one.
 CHECKPOINT_EVERY = 25
 
 
 class RoomError(Exception):
     """A request the room cannot honour (bad token, room full, not host...)."""
+
+
+class ServerFullError(RoomError):
+    """The server holds its maximum number of rooms and none are idle enough to evict."""
 
 
 def new_room_id() -> str:
@@ -153,6 +161,7 @@ class Room:
 
     # ------------------------------------------------------------------ play
     def decision_dict(self) -> dict:
+        assert self.state is not None
         d = current_decision(self.state)
         return {"kind": d.kind, "player": d.player, "context": d.context}
 
@@ -197,6 +206,7 @@ class Room:
         return [(seat, self.state_message(seat))]
 
     def _apply(self, action_dict: dict) -> list[Outbound]:
+        assert self.state is not None
         action = action_from_dict(action_dict)  # raises IllegalActionError
         _, events = step(self.state, action)  # validates; raises IllegalActionError
         self.action_log.append(action_to_dict(action))
@@ -239,6 +249,7 @@ class Room:
             return []
         msg = {"type": "chat", "seat": seat, "name": self.seat_list[seat].name, "text": text}
         self.chat_log.append(msg)
+        del self.chat_log[:-MAX_CHAT_LOG]
         return [(i, msg) for i in range(len(self.seat_list))]
 
     # ------------------------------------------------------------ persistence
@@ -314,6 +325,55 @@ class Room:
         return room
 
 
+@dataclass
+class CreateParams:
+    """Validated body of ``POST /rooms``."""
+
+    config: GameConfig
+    timeout: float | None = None
+    timeout_consent: bool = False
+
+
+def parse_create_request(body) -> CreateParams:
+    """Validate a decoded ``POST /rooms`` body (shared by both backends).
+
+    Raises ``ValueError`` with a client-facing message for anything wrong: a non-object body or
+    config, unknown or invalid config fields, or a timeout that is not ``null`` or a number of
+    seconds within [MIN_TIMEOUT, MAX_TIMEOUT].
+    """
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        raise ValueError("body must be a JSON object")
+    raw = body.get("config")
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("config must be an object")
+    try:
+        config = GameConfig(**raw)
+    except TypeError as e:
+        raise ValueError(f"bad config: {e}") from None
+    timeout = body.get("timeout")
+    if timeout is not None:
+        if isinstance(timeout, bool) or not isinstance(timeout, int | float):
+            raise ValueError("timeout must be a number of seconds or null")
+        if not MIN_TIMEOUT <= timeout <= MAX_TIMEOUT:
+            raise ValueError(f"timeout must be between {MIN_TIMEOUT:g} and {MAX_TIMEOUT:g} seconds")
+    return CreateParams(config, timeout, bool(body.get("timeout_consent", False)))
+
+
+def message_too_large(text: str | bytes) -> bool:
+    """True if an inbound WebSocket message exceeds MAX_MESSAGE_BYTES (both backends reject it)."""
+    size = len(text) if isinstance(text, bytes) else len(text.encode())
+    return size > MAX_MESSAGE_BYTES
+
+
+def idle_limit(room: Room, idle_ttl: float, finished_ttl: float) -> float:
+    """Seconds a room may sit idle before it is evicted; finished games go sooner."""
+    return min(idle_ttl, finished_ttl) if room.phase == "over" else idle_ttl
+
+
 def new_room(
     room_id: str,
     config: dict | GameConfig | None = None,
@@ -359,17 +419,31 @@ def _error(message: str, code: str = "error") -> dict:
     return {"type": "error", "code": code, "message": message}
 
 
+DEFAULT_MAX_ROOMS = 500
+DEFAULT_IDLE_TTL = 48 * 3600.0  # seconds a room may be idle before eviction
+DEFAULT_FINISHED_TTL = 1 * 3600.0  # finished games are evicted sooner
+
+
 class RoomManager:
     def __init__(
         self,
         clock: Clock = time.monotonic,
         storage_dir: str | Path | None = None,
         checkpoint_every: int | None = CHECKPOINT_EVERY,
+        max_rooms: int = DEFAULT_MAX_ROOMS,
+        idle_ttl: float = DEFAULT_IDLE_TTL,
+        finished_ttl: float = DEFAULT_FINISHED_TTL,
     ):
         self.clock = clock
         self.checkpoint_every = checkpoint_every
+        self.max_rooms = max_rooms
+        self.idle_ttl = idle_ttl
+        self.finished_ttl = finished_ttl
         self.rooms: dict[str, Room] = {}
+        self.last_active: dict[str, float] = {}  # room id -> manager clock time
         self.storage_dir = Path(storage_dir) if storage_dir else None
+        # Called with a room id after it is evicted (the transport drops its locks/sockets).
+        self.on_evict: Callable[[str], None] | None = None
 
     def create_room(
         self,
@@ -377,28 +451,64 @@ class RoomManager:
         timeout: float | None = None,
         timeout_consent: bool = False,
     ) -> Room:
+        """Build and register a room; raises ServerFullError when at capacity after eviction."""
+        if len(self.rooms) >= self.max_rooms:
+            self.evict_idle()
+            if len(self.rooms) >= self.max_rooms:
+                raise ServerFullError("server is full, try again later")
         room = new_room(new_room_id(), config, timeout, timeout_consent, self.clock)
         while room.id in self.rooms:
             room.id = new_room_id()
         self.rooms[room.id] = room
+        self.touch(room.id)
         return room
 
     def get(self, room_id: str) -> Room:
         try:
-            return self.rooms[room_id]
+            room = self.rooms[room_id]
         except KeyError:
             raise RoomError(f"no such room {room_id}") from None
+        self.touch(room_id)
+        return room
+
+    def touch(self, room_id: str) -> None:
+        self.last_active[room_id] = self.clock()
 
     def tick(self) -> dict[str, list[Outbound]]:
         out = {}
         for rid, room in self.rooms.items():
             msgs = room.tick()
             if msgs:
+                self.touch(rid)
                 out[rid] = msgs
         return out
 
+    def evict_idle(self) -> list[str]:
+        """Drop rooms idle past their limit (never ones with a connected player), including
+        their saved files. Returns the evicted ids."""
+        now = self.clock()
+        gone = [
+            rid
+            for rid, room in self.rooms.items()
+            if not any(s.connected for s in room.seat_list)
+            and now - self.last_active.get(rid, now)
+            > idle_limit(room, self.idle_ttl, self.finished_ttl)
+        ]
+        for rid in gone:
+            self.remove(rid)
+        return gone
+
+    def remove(self, room_id: str) -> None:
+        self.rooms.pop(room_id, None)
+        self.last_active.pop(room_id, None)
+        if self.storage_dir is not None:
+            (self.storage_dir / f"{room_id}.json").unlink(missing_ok=True)
+        if self.on_evict is not None:
+            self.on_evict(room_id)
+
     # persistence
     def save(self, room: Room) -> None:
+        self.touch(room.id)
         if self.storage_dir is None:
             return
         self.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -411,8 +521,11 @@ class RoomManager:
         if self.storage_dir is None or not self.storage_dir.is_dir():
             return 0
         n = 0
+        wall = time.time()
         for p in sorted(self.storage_dir.glob("*.json")):
             room = Room.restore(json.loads(p.read_text()), self.clock)
             self.rooms[room.id] = room
+            # Idleness survives restarts: it starts from the file's modification time.
+            self.last_active[room.id] = self.clock() - max(0.0, wall - p.stat().st_mtime)
             n += 1
         return n
