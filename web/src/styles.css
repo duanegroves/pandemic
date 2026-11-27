@@ -102,6 +102,10 @@ input, select { background: #0f131a; border: 1px solid var(--line); border-radiu
 .label { fill: #eef3fa; font-size: 11.5px; text-anchor: middle; paint-order: stroke; stroke: #0b1320; stroke-width: 3.5px; stroke-linejoin: round; pointer-events: none; }
 .target-ring { fill: none; stroke: #ffd54a; stroke-width: 2.5; stroke-dasharray: 4 3; animation: spin 6s linear infinite; transform-origin: center; }
 @keyframes spin { to { stroke-dashoffset: -28; } }
+.cube-layer, .labels { pointer-events: none; }
+/* Count of the city's own-colour cubes, drawn inside its circle. */
+.node-n { fill: #fff; font-size: 12.5px; font-weight: 800; text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: #0b1320; stroke-width: 2.5px; stroke-linejoin: round; }
+.node-n.dark { fill: #1a1a1a; stroke: #fff6; stroke-width: 1.5px; }
 .cube { stroke: #000a; stroke-width: 1; }
 .cube-n { font-size: 9px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 .station { fill: #fff; stroke: #111; stroke-width: 1.5; }

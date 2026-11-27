@@ -119,7 +119,6 @@ export function Board({ obs, you, names, targets, selected, onCity, overlay }: P
               {isTarget && <circle r={17} className="target-ring" />}
               <circle r={11} fill={DISEASE_FILL[c.color]} className="node" />
               {stations.has(c.name) && <Station />}
-              <CubeRow cubes={cubes} />
               {pawns.map((p, i) => (
                 <Pawn
                   key={p.index}
@@ -130,12 +129,46 @@ export function Board({ obs, you, names, targets, selected, onCity, overlay }: P
                   title={`${names[p.index] ?? "Player " + (p.index + 1)}`}
                 />
               ))}
-              <text y={28} className="label">
-                {c.name}
-              </text>
             </g>
           );
         })}
+        {/* Labels, then cube counts, are drawn in their own layers after every city, so a
+            neighbouring city's label can never cover a count. The count of the city's own colour
+            sits inside its circle; cubes of other colours (from outbreaks) get badges above. */}
+        <g className="labels" aria-hidden="true">
+          {meta.cities.map((c) => {
+            const { x, y } = cityPos(c.name);
+            return (
+              <text key={c.name} x={x} y={y + 28} className="label">
+                {c.name}
+              </text>
+            );
+          })}
+        </g>
+        <g className="cube-layer" aria-hidden="true">
+          {meta.cities.map((c) => {
+            const own = obs.cubes[c.name]?.[c.color] ?? 0;
+            const others = COLORS.filter(
+              (k) => k !== c.color && (obs.cubes[c.name]?.[k] ?? 0) > 0,
+            ).map((k) => ({ k, n: obs.cubes[c.name]![k]! }));
+            if (!own && !others.length) return null;
+            const { x, y } = cityPos(c.name);
+            return (
+              <g key={c.name} transform={`translate(${x},${y})`}>
+                {own > 0 && (
+                  <text className={"node-n" + (c.color === "yellow" ? " dark" : "")} y={0.5}>
+                    {own}
+                  </text>
+                )}
+                {others.length > 0 && (
+                  <g transform="translate(0,-26)">
+                    <CubeRow cubes={others} />
+                  </g>
+                )}
+              </g>
+            );
+          })}
+        </g>
       </svg>
       {overlay}
     </div>
@@ -147,7 +180,7 @@ function CubeRow({ cubes }: { cubes: { k: Color; n: number }[] }) {
   const w = 13;
   const x0 = (-cubes.length * w) / 2;
   return (
-    <g className="cubes" transform="translate(0,-28)">
+    <g className="cubes">
       {cubes.map((q, i) => (
         <g key={q.k} transform={`translate(${x0 + i * w + w / 2},0)`}>
           <rect x={-6} y={-6} width={12} height={12} rx={2} fill={DISEASE_FILL[q.k]} className="cube" />
