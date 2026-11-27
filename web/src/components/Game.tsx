@@ -11,6 +11,7 @@ import {
   treatByColor,
 } from "../lib/actions";
 import { remaining } from "../lib/countdown";
+import { eventInfo } from "../lib/eventCards";
 import { DISEASE_FILL, ROLE_STYLE } from "../lib/theme";
 import { MAP_H, MAP_W, cityPos } from "../lib/geo";
 import { useCityMap } from "../meta";
@@ -259,11 +260,18 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
       {mine && kind === "event_window" && (
         <div className="panel inline-panel">
           {[...playable].map((c) => (
-            <button key={c} className="primary" onClick={() => playEvent(c)}>
+            <button key={c} className="primary" onClick={() => playEvent(c)} title={eventInfo(c)}>
               Play {c}
             </button>
           ))}
           {G.pass && <button onClick={() => act(G.pass!)}>Pass</button>}
+          <div className="event-window-info">
+            {[...playable].map((c) => (
+              <div key={c}>
+                <b>{c}:</b> {eventInfo(c)}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

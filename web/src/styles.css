@@ -147,6 +147,13 @@ details summary { cursor: pointer; color: var(--muted); margin: 4px 0; }
 .role-summary { font-weight: 600; margin-bottom: 3px; }
 .role-info ul { margin: 0; padding-left: 16px; }
 .role-info li { margin: 2px 0; color: var(--muted); }
+.events-toggle { display: block; margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+.event-info { border-left-color: #a67cf0; }
+.event-desc { margin: 2px 0; color: var(--muted); }
+.event-desc b { color: var(--text); }
+.event-rules { margin-top: 5px; font-size: 12px; font-style: italic; color: var(--muted); }
+.event-window-info { flex-basis: 100%; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+.event-window-info b { color: var(--text); }
 .pawn-dot { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 9px; font-weight: 800; }
 .hand { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: center; }
 .card-chip { padding: 2px 8px; font-size: 12px; border-radius: 5px; border-width: 2px; background: #2a323f; }
