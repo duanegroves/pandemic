@@ -166,12 +166,28 @@ details summary { cursor: pointer; color: var(--muted); margin: 4px 0; }
 .logs { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
 .log { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; font-size: 13px; }
 .log li { padding: 2px 0 2px 8px; border-left: 3px solid var(--line); margin-bottom: 2px; overflow-wrap: anywhere; }
-.log .tone-bad { border-color: var(--bad); }
-.log .tone-warn { border-color: var(--warn); }
-.log .tone-good { border-color: var(--good); }
-.log .tone-turn { border-color: var(--accent); font-weight: 700; margin-top: 6px; }
 .chatlog { max-height: 220px; }
 .chat > .row { margin-bottom: 6px; }
+
+/* game log: one collapsible section per turn, newest at the bottom */
+.turnlog { max-height: 320px; }
+.turn { margin-bottom: 6px; }
+.turn-head { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; padding: 3px 6px 3px 8px; border-left: 4px solid var(--accent); background: var(--panel2); border-radius: 0 4px 4px 0; color: var(--text); }
+.turn-head::-webkit-details-marker { display: none; }
+.turn-head::before { content: "▸"; color: var(--muted); }
+.turn[open] > .turn-head::before { content: "▾"; }
+.turn-title { font-weight: 700; margin-right: 2px; }
+.turn-summary { display: contents; } /* chips become items of the wrapping header row */
+.chip { font-size: 12px; padding: 0 6px; border-radius: 9px; background: #0f131a; border: 1px solid var(--line); overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+.chip.alert { border-color: var(--bad); background: #ef53501f; font-weight: 700; }
+.chip.milestone { border-color: var(--good); background: #46c37b1f; font-weight: 700; }
+.inf { white-space: nowrap; }
+.turn-lines { list-style: none; margin: 3px 0 0; padding: 0 0 0 4px; }
+.line { padding: 2px 0 2px 8px; border-left: 3px solid var(--line); margin-bottom: 2px; overflow-wrap: anywhere; }
+.line.board { border-left-color: transparent; }
+.line.alert { background: #ef53501f; font-weight: 700; border-left-color: var(--bad); }
+.line.milestone { background: #46c37b1f; font-weight: 700; border-left-color: var(--good); }
+.log-cube { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 5px 0 1px; vertical-align: baseline; border: 1px solid #0008; }
 
 /* modal */
 .modal-backdrop { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; z-index: 100; padding: 12px; }

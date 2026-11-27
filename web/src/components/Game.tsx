@@ -142,6 +142,8 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
   );
 
   const cityColor = (c: string) => cities.get(c)?.color;
+  // A player's colour everywhere in the UI is their pawn (role) colour.
+  const colorOf = (seat: number) => ROLE_STYLE[obs.players[seat]?.role ?? ""]?.fill;
   const turnName = names[obs.current_player] ?? `Player ${obs.current_player + 1}`;
 
   // ---- banner ----
@@ -359,14 +361,18 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
           <div className="logs">
             <section className="panel">
               <h3>Event log</h3>
-              <EventLog log={view.log} />
+              <EventLog
+                log={view.log}
+                name={(seat) => (seat === you ? "You" : (names[seat] ?? `Player ${seat + 1}`))}
+                colorOf={colorOf}
+              />
             </section>
             <section className="panel">
               <h3>Chat</h3>
               <ChatBox
                 chat={view.chat}
                 send={send}
-                colorOf={(seat) => ROLE_STYLE[obs.players[seat]?.role ?? ""]?.fill}
+                colorOf={colorOf}
               />
             </section>
           </div>
