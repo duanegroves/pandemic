@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { ROLE_LABEL } from "../lib/actions";
+import { ROLE_INFO } from "../lib/roles";
 import { ROLE_STYLE } from "../lib/theme";
 import { useCityMap, useMeta } from "../meta";
 import type { Observation } from "../types";
@@ -19,6 +21,15 @@ export function PlayersPanel({ obs, names, you, playable, selected, selectable, 
   const cities = useCityMap();
   const meta = useMeta();
   const owner = obs.decision.player;
+  // Which players' role descriptions are expanded: your own starts open.
+  const [openRoles, setOpenRoles] = useState<Set<number>>(() => new Set([you]));
+  const toggleRole = (i: number) =>
+    setOpenRoles((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   const card = (c: string, from: "hand" | "stored", key: string | number, own: boolean) => {
     const isEvent = meta.events.includes(c);
@@ -58,11 +69,29 @@ export function PlayersPanel({ obs, names, you, playable, selected, selectable, 
               {owner === p.index && <span className="tag warn">deciding: {obs.decision.kind.replace(/_/g, " ")}</span>}
             </div>
             <div className="muted">
-              {ROLE_LABEL[p.role] ?? p.role} in{" "}
+              <button
+                className="role-toggle"
+                aria-expanded={openRoles.has(p.index)}
+                title={openRoles.has(p.index) ? "Hide what this role does" : "What does this role do?"}
+                onClick={() => toggleRole(p.index)}
+              >
+                {ROLE_LABEL[p.role] ?? p.role} <span className="role-i">ⓘ</span>
+              </button>{" "}
+              in{" "}
               <button className="link" onClick={() => onLocate(p.location)}>
                 {p.location}
               </button>
             </div>
+            {openRoles.has(p.index) && ROLE_INFO[p.role] && (
+              <div className="role-info" style={{ borderLeftColor: st?.fill }}>
+                <div className="role-summary">{ROLE_INFO[p.role].summary}</div>
+                <ul>
+                  {ROLE_INFO[p.role].abilities.map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="hand">
               {p.hand ? (
                 p.hand.length ? (
