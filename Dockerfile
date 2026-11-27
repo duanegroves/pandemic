@@ -3,7 +3,7 @@
 # ---- Stage 1: build the React frontend --------------------------------------------------------
 # Runs on the build machine's native platform: the output is static files, so there's no need to
 # emulate arm64 here (that would be slow in CI).
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
