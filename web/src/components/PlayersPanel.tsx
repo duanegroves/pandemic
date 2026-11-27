@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ROLE_LABEL } from "../lib/actions";
-import { EVENT_RULES, eventInfo } from "../lib/eventCards";
+import { eventInfo } from "../lib/eventCards";
 import { ROLE_INFO } from "../lib/roles";
 import { ROLE_STYLE } from "../lib/theme";
 import { useCityMap, useMeta } from "../meta";
@@ -15,17 +15,27 @@ interface Props {
   selected: string | null;
   selectable: boolean;
   onCard: (card: string, from: "hand" | "stored") => void;
+  /** Show what an Event card does (cards you can't play right now, or another player's). */
+  onEventInfo: (card: string, holder: number) => void;
   onLocate: (city: string) => void;
 }
 
-export function PlayersPanel({ obs, names, you, playable, selected, selectable, onCard, onLocate }: Props) {
+export function PlayersPanel({
+  obs,
+  names,
+  you,
+  playable,
+  selected,
+  selectable,
+  onCard,
+  onEventInfo,
+  onLocate,
+}: Props) {
   const cities = useCityMap();
   const meta = useMeta();
   const owner = obs.decision.player;
   // Which players' role descriptions are expanded: your own starts open.
   const [openRoles, setOpenRoles] = useState<Set<number>>(() => new Set([you]));
-  // Which players' event card descriptions are expanded (all start closed).
-  const [openEvents, setOpenEvents] = useState<Set<number>>(() => new Set());
   const toggle = (set: typeof setOpenRoles) => (i: number) =>
     set((prev) => {
       const next = new Set(prev);
@@ -33,13 +43,15 @@ export function PlayersPanel({ obs, names, you, playable, selected, selectable, 
       else next.add(i);
       return next;
     });
-  const toggleEvents = toggle(setOpenEvents);
   const toggleRole = toggle(setOpenRoles);
 
-  const card = (c: string, from: "hand" | "stored", key: string | number, own: boolean) => {
+  const card = (c: string, from: "hand" | "stored", key: string | number, own: boolean, holder: number) => {
     const isEvent = meta.events.includes(c);
     const color = cities.get(c)?.color;
-    const clickable = own && (c === selected || (isEvent && playable.has(c)) || (selectable && from === "hand"));
+    // Your own card that does something when clicked right now (select to discard, or play).
+    const acts = own && (c === selected || (isEvent && playable.has(c)) || (selectable && from === "hand"));
+    // Event cards can always be clicked to see what they do.
+    const clickable = acts || isEvent;
     return (
       <button
         key={key}
@@ -47,12 +59,8 @@ export function PlayersPanel({ obs, names, you, playable, selected, selectable, 
           "card-chip " + (isEvent ? "event" : (color ?? "")) + (selected === c ? " selected" : "") + (clickable ? " clickable" : "")
         }
         disabled={!clickable}
-        title={
-          isEvent
-            ? `${c}: ${eventInfo(c) ?? "Event card"}${playable.has(c) && own ? " (click to play)" : ""}`
-            : (cities.get(c)?.color ?? "")
-        }
-        onClick={() => onCard(c, from)}
+        title={isEvent ? `${c}: ${eventInfo(c) ?? "Event card"}` : (cities.get(c)?.color ?? "")}
+        onClick={() => (acts ? onCard(c, from) : onEventInfo(c, holder))}
       >
         {c}
       </button>
@@ -104,7 +112,7 @@ export function PlayersPanel({ obs, names, you, playable, selected, selectable, 
             <div className="hand">
               {p.hand ? (
                 p.hand.length ? (
-                  p.hand.map((c, i) => card(c, "hand", i, mine))
+                  p.hand.map((c, i) => card(c, "hand", i, mine, p.index))
                 ) : (
                   <span className="muted">empty hand</span>
                 )
@@ -114,42 +122,9 @@ export function PlayersPanel({ obs, names, you, playable, selected, selectable, 
             </div>
             {p.stored_event && (
               <div className="hand">
-                <span className="muted">Stored:</span> {card(p.stored_event, "stored", "s", mine)}
+                <span className="muted">Stored:</span> {card(p.stored_event, "stored", "s", mine, p.index)}
               </div>
             )}
-            {(() => {
-              const events = [...(p.hand ?? []), ...(p.stored_event ? [p.stored_event] : [])].filter(
-                (c, i, all) => eventInfo(c) && all.indexOf(c) === i,
-              );
-              if (!events.length) return null;
-              const open = openEvents.has(p.index);
-              return (
-                <>
-                  <button
-                    className="role-toggle events-toggle"
-                    aria-expanded={open}
-                    onClick={() => toggleEvents(p.index)}
-                  >
-                    <span className="role-i">ⓘ</span>{" "}
-                    {open
-                      ? `Hide event card${events.length === 1 ? "" : "s"}`
-                      : events.length === 1
-                        ? "What does this event card do?"
-                        : "What do these event cards do?"}
-                  </button>
-                  {open && (
-                    <div className="role-info event-info">
-                      {events.map((c) => (
-                        <div key={c} className="event-desc">
-                          <b>{c}:</b> {eventInfo(c)}
-                        </div>
-                      ))}
-                      <div className="event-rules">{EVENT_RULES}</div>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
           </div>
         );
       })}

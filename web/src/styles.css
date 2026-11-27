@@ -147,11 +147,9 @@ details summary { cursor: pointer; color: var(--muted); margin: 4px 0; }
 .role-summary { font-weight: 600; margin-bottom: 3px; }
 .role-info ul { margin: 0; padding-left: 16px; }
 .role-info li { margin: 2px 0; color: var(--muted); }
-.events-toggle { display: block; margin-top: 4px; font-size: 12.5px; color: var(--muted); }
-.event-info { border-left-color: #a67cf0; }
-.event-desc { margin: 2px 0; color: var(--muted); }
-.event-desc b { color: var(--text); }
-.event-rules { margin-top: 5px; font-size: 12px; font-style: italic; color: var(--muted); }
+.event-intro { padding: 8px 10px; border-left: 3px solid #a67cf0; background: #0f131a; border-radius: 0 4px 4px 0; margin-bottom: 8px; }
+.event-intro p { margin: 0; }
+.event-rules { margin-top: 5px !important; font-size: 12px; font-style: italic; color: var(--muted); }
 .event-window-info { flex-basis: 100%; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
 .event-window-info b { color: var(--text); }
 .pawn-dot { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 9px; font-weight: 800; }
@@ -210,6 +208,10 @@ details summary { cursor: pointer; color: var(--muted); margin: 4px 0; }
 .modal-head h3 { text-transform: none; font-size: 16px; color: var(--text); letter-spacing: 0; }
 .options { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .options.col { flex-direction: column; align-items: stretch; }
+/* An option with an explanation under its name (e.g. Event cards in a picker): full-width rows. */
+.options:has(> .described) { flex-direction: column; align-items: stretch; }
+.options > button.described { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 7px 10px; }
+.option-desc { font-size: 12.5px; color: var(--muted); font-weight: normal; }
 .forecast { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
 .fc { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: var(--panel2); border-left: 6px solid var(--line); cursor: grab; }
 .fc.blue { border-left-color: var(--blue); }

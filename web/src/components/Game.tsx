@@ -11,7 +11,7 @@ import {
   treatByColor,
 } from "../lib/actions";
 import { remaining } from "../lib/countdown";
-import { eventInfo } from "../lib/eventCards";
+import { EVENT_RULES, eventInfo } from "../lib/eventCards";
 import { DISEASE_FILL, ROLE_STYLE } from "../lib/theme";
 import { MAP_H, MAP_W, cityPos } from "../lib/geo";
 import { useCityMap } from "../meta";
@@ -37,6 +37,18 @@ interface ChooserState {
   actions: Action[];
   keys: string[];
   prompt?: Record<string, string>;
+  /** Event card being played: its description is shown at the top of the dialog. */
+  eventCard?: string;
+}
+
+/** What an Event card does, plus the rule that events are free to play. */
+function EventIntro({ card }: { card: string }) {
+  return (
+    <div className="event-intro">
+      <p>{eventInfo(card)}</p>
+      <p className="event-rules">{EVENT_RULES}</p>
+    </div>
+  );
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -88,6 +100,8 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
 
   const [pop, setPop] = useState<{ city: string } | null>(null);
   const [chooser, setChooser] = useState<ChooserState | null>(null);
+  // Event card whose description is being shown (one you can't play now, or someone else's).
+  const [infoCard, setInfoCard] = useState<{ card: string; holder: number } | null>(null);
   const [share, setShare] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
@@ -115,9 +129,11 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
     else if ("choice" in r) setChooser({ title, actions, keys, prompt });
   };
 
+  // Playing an event always opens its dialog (what it does, any targets, then confirm), so a
+  // card is never played by a stray click.
   const playEvent = (card: string) => {
     const acts = G.events.get(card);
-    if (acts) pickFrom(`Play ${card}`, acts, EVENT_KEYS[card] ?? []);
+    if (acts) setChooser({ title: `Play ${card}`, actions: acts, keys: EVENT_KEYS[card] ?? [], eventCard: card });
   };
 
   const playable = useMemo(() => new Set(G.events.keys()), [G.events]);
@@ -333,7 +349,11 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
                 {G.takeEvent.length > 0 && (
                   <button
                     disabled={!inActions}
-                    onClick={() => pickFrom("Take an event card from the discard pile", G.takeEvent, ["card"])}
+                    onClick={() =>
+                      pickFrom("Take an event card from the discard pile", G.takeEvent, ["card"], {
+                        card: "Which event card do you want to store on your role card?",
+                      })
+                    }
                   >
                     Take event card
                   </button>
@@ -396,6 +416,7 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
             selected={sel}
             selectable={discarding}
             onCard={onCard}
+            onEventInfo={(card, holder) => setInfoCard({ card, holder })}
             onLocate={(c) => {
               setPop(null);
               setHighlight(c);
@@ -409,9 +430,25 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
         <Chooser
           {...chooser}
           label={chooserLabel}
+          intro={chooser.eventCard ? <EventIntro card={chooser.eventCard} /> : undefined}
+          describe={(k, v) => (k === "card" ? eventInfo(String(v)) : undefined)}
           onPick={act}
           onClose={() => setChooser(null)}
         />
+      )}
+
+      {infoCard && (
+        <Modal title={infoCard.card} onClose={() => setInfoCard(null)}>
+          <EventIntro card={infoCard.card} />
+          <p className="muted">
+            {infoCard.holder === you
+              ? "You can't play this card right now."
+              : `${names[infoCard.holder] ?? "Another player"} is holding this card.`}
+          </p>
+          <div className="row">
+            <button onClick={() => setInfoCard(null)}>Close</button>
+          </div>
+        </Modal>
       )}
 
       {share && (
