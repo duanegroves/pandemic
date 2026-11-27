@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 from collections import defaultdict
 from pathlib import Path
@@ -13,10 +14,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from pandemic.data.cards import EventCard
-from pandemic.data.cities import CITIES
-from pandemic.engine.config import ROLES
-from pandemic.server.rooms import Outbound, Room, RoomError, RoomManager
+from pandemic.server.meta import meta_dict
+from pandemic.server.rooms import (
+    Outbound,
+    Room,
+    RoomError,
+    RoomManager,
+    handle_client_message,
+)
 
 STATIC = Path(__file__).parent / "static"
 _DEFAULT_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
@@ -90,15 +95,7 @@ def create_app(manager: RoomManager | None = None) -> FastAPI:
     @app.get("/meta")
     def meta():
         """Static board data so clients need not duplicate the map."""
-        return {
-            "cities": [
-                {"name": c.name, "color": c.color.value, "population": c.population,
-                 "neighbors": list(c.neighbors)}
-                for c in CITIES.values()
-            ],
-            "roles": [r.value for r in ROLES],
-            "events": [e.value for e in EventCard],
-        }
+        return meta_dict()
 
     @app.get("/debug")
     def debug_client():
@@ -137,15 +134,17 @@ def create_app(manager: RoomManager | None = None) -> FastAPI:
 
     @app.websocket("/ws/{room_id}")
     async def ws_endpoint(ws: WebSocket, room_id: str, token: str = ""):
+        await ws.accept()
         room = manager.rooms.get(room_id)
         try:
             if room is None:
                 raise RoomError("no such room")
             seat = room.seat_of(token)
         except RoomError:
+            # Accept first so the client sees close code 4401 (closing before accept would be a
+            # plain HTTP 403 handshake failure, which browsers report as 1006).
             await ws.close(code=4401)
             return
-        await ws.accept()
         async with hub.locks[room_id]:
             hub.conns[room_id][seat].add(ws)
             await hub.deliver(room_id, room.set_connected(seat, True))
@@ -153,9 +152,14 @@ def create_app(manager: RoomManager | None = None) -> FastAPI:
                 await ws.send_json(room.state_message(seat))
         try:
             while True:
-                data = await ws.receive_json()
+                try:
+                    data = json.loads(await ws.receive_text())
+                except ValueError:
+                    await ws.send_json({"type": "error", "code": "bad_request",
+                                        "message": "message must be JSON"})
+                    continue
                 async with hub.locks[room_id]:
-                    msgs = _handle(room, token, seat, data)
+                    msgs = handle_client_message(room, token, seat, data)
                     if any(m.get("type") in ("state", "lobby") for _, m in msgs):
                         manager.save(room)
                     await hub.deliver(room_id, msgs)
@@ -172,31 +176,6 @@ def create_app(manager: RoomManager | None = None) -> FastAPI:
         app.mount("/", StaticFiles(directory=WEB_DIST), name="web")
 
     return app
-
-
-def _handle(room: Room, token: str, seat: int, data) -> list[Outbound]:
-    def err(message: str, code: str = "bad_request") -> list[Outbound]:
-        return [(seat, {"type": "error", "code": code, "message": message})]
-
-    if not isinstance(data, dict):
-        return err("message must be a JSON object")
-    kind = data.get("type")
-    try:
-        if kind == "action":
-            if not isinstance(data.get("action"), dict):
-                return err("missing action object")
-            return room.submit(token, data["action"])
-        if kind == "ready":
-            return room.set_ready(token, bool(data.get("ready", True)))
-        if kind == "start":
-            return room.start(token)
-        if kind == "chat":
-            return room.chat(token, data.get("text", ""))
-        if kind == "sync":
-            return room.sync(token)
-    except RoomError as e:
-        return err(str(e))
-    return err(f"unknown message type {kind!r}")
 
 
 app = create_app()

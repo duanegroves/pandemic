@@ -1,6 +1,25 @@
 # Deployment status and handoff
 
-Status as of 2026-11-26. **If you are an agent picking up "finish the deployment", start here.**
+Status as of 2026-11-27. **If you are an agent picking up "finish the deployment", start here.**
+Overview of the options: `docs/DEPLOY.md`.
+
+There are two independent deploy targets:
+
+| Target | Status |
+|---|---|
+| Cloudflare Worker + Durable Objects (`cloudflare/worker/`, `docs/CLOUDFLARE.md`) | Code and tests done (conformance suite passes against `pywrangler dev`; `pywrangler deploy --dry-run` builds). **Not deployed yet**: the user will deploy by hand after review. Replaces the spike at https://pandemic-game.duanegroves.workers.dev. CI job `deploy-cloudflare` is skipped until `CLOUDFLARE_ENABLED=true` plus the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` exist. |
+| Oracle VM with the Docker image (below, `docs/DEPLOY_ORACLE.md`) | Blocked on the VM; see below. |
+
+## Cloudflare: remaining steps
+
+1. `cd web && npm ci && npm run build`, then `cd ../cloudflare/worker && ./scripts/sync.sh`.
+2. `uv run pywrangler deploy` (needs uv >= 0.13.4, and `pywrangler login` or the two env vars).
+3. Verify: `uv run --all-extras python tests/conformance/conformance.py --base https://pandemic-game.<subdomain>.workers.dev`
+   and play a game in a browser. Watch CPU time with `uv run pywrangler tail` (or `npx wrangler tail`).
+4. For CI: create the API token, `gh secret set CLOUDFLARE_API_TOKEN`, `gh secret set
+   CLOUDFLARE_ACCOUNT_ID`, `gh variable set CLOUDFLARE_ENABLED --body true`.
+
+## Oracle VM (Docker image)
 
 ## Done
 
@@ -12,19 +31,19 @@ Status as of 2026-11-26. **If you are an agent picking up "finish the deployment
   `ghcr.io/duanegroves/pandemic:latest` and `:<sha>`.
 - The `deploy` job is **skipped** until the repo variable `DEPLOY_ENABLED=true` is set. It has
   never run yet.
-- Full human guide: `docs/DEPLOY.md`.
+- Full human guide: `docs/DEPLOY_ORACLE.md`.
 
 ## Blocked on
 
 The user creating the Oracle Cloud VM. Ampere A1 creation failed with "Out of capacity"; see the
-troubleshooting section in `docs/DEPLOY.md`. Either shape (A1 arm64 or E2.1.Micro x86) works
+troubleshooting section in `docs/DEPLOY_ORACLE.md`. Either shape (A1 arm64 or E2.1.Micro x86) works
 with the current image.
 
 ## Remaining steps (for the agent)
 
 Ask the user for: the VM's **public IP**, the **SSH username** (`ubuntu` on Ubuntu images,
 `opc` on Oracle Linux), and an optional **domain name**. Confirm with the user that they have
-done the VM-side setup in `docs/DEPLOY.md` sections 1 ("Open ports 80 and 443": both the
+done the VM-side setup in `docs/DEPLOY_ORACLE.md` sections 1 ("Open ports 80 and 443": both the
 Security List and iptables) and "Install Docker". If the user can SSH in from this machine, you
 can check those yourself (`ssh <user>@<ip> 'docker compose version; sudo iptables -L INPUT -n'`).
 

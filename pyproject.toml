@@ -38,6 +38,12 @@ pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
+# Generated copies/vendored files inside the Worker (see cloudflare/worker/scripts/sync.sh).
+extend-exclude = [
+    "cloudflare/worker/src/pandemic",
+    "cloudflare/worker/python_modules",
+    "cloudflare/worker/public",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "UP"]

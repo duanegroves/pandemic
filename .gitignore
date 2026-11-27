@@ -14,3 +14,5 @@ Pandemic_Rules.md
 .deploy-test/
 .env
 .playwright-mcp/
+rooms/
+.conformance_state.json

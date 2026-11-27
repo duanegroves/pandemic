@@ -38,10 +38,16 @@ Outbound = tuple[int, dict]
 Clock = Callable[[], float]
 
 MAX_CHAT = 500
+# Snapshots carry a state checkpoint once this many actions have passed since the last one.
+CHECKPOINT_EVERY = 25
 
 
 class RoomError(Exception):
     """A request the room cannot honour (bad token, room full, not host...)."""
+
+
+def new_room_id() -> str:
+    return secrets.token_hex(3)
 
 
 def state_hash(state: GameState) -> str:
@@ -71,6 +77,9 @@ class Room:
     action_log: list[dict] = field(default_factory=list)
     deadline: float | None = None
     chat_log: list[dict] = field(default_factory=list)
+    # Latest state checkpoint {"at": number of actions applied, "state": GameState.to_dict()}.
+    # Lets restore replay only the actions after it instead of the whole game.
+    checkpoint: dict | None = None
 
     # ------------------------------------------------------------------ lobby
     @property
@@ -233,8 +242,19 @@ class Room:
         return [(i, msg) for i in range(len(self.seat_list))]
 
     # ------------------------------------------------------------ persistence
-    def snapshot(self) -> dict:
-        return {
+    def snapshot(self, checkpoint_every: int | None = None) -> dict:
+        """JSON-able room snapshot.
+
+        With ``checkpoint_every=N`` the snapshot also carries a state checkpoint, refreshed
+        whenever N or more actions have been applied since the last one, so ``restore`` replays
+        at most about N actions. Without it, an existing checkpoint is carried forward as is.
+        """
+        if checkpoint_every and self.state is not None:
+            done = len(self.action_log)
+            last = self.checkpoint["at"] if self.checkpoint else 0
+            if done - last >= checkpoint_every:
+                self.checkpoint = {"at": done, "state": self.state.to_dict()}
+        snap = {
             "version": 1,
             "id": self.id,
             "config": self.config.to_dict(),
@@ -245,10 +265,18 @@ class Room:
             "actions": list(self.action_log),
             "state_hash": None if self.state is None else state_hash(self.state),
         }
+        if self.checkpoint is not None:
+            snap["checkpoint"] = self.checkpoint
+        return snap
 
     @classmethod
     def restore(cls, snap: dict, clock: Clock = time.monotonic) -> Room:
-        """Rebuild a room by replaying the action log; verifies the stored state hash."""
+        """Rebuild a room from a snapshot and verify the stored state hash.
+
+        Loads the checkpoint if there is one and replays only the actions after it; if that
+        does not reproduce the stored hash it falls back to replaying the whole log from the
+        seed. Snapshots without a checkpoint (the original format) replay everything.
+        """
         room = cls(
             id=snap["id"],
             config=GameConfig.from_dict(snap["config"]),
@@ -259,14 +287,72 @@ class Room:
         room.seat_list = [Seat(s["name"], s["token"], s.get("ready", False)) for s in snap["seats"]]
         if snap["seed"] is not None:
             room.seed = snap["seed"]
-            room.state = new_game(room.config, room.seed)
-            for a in snap["actions"]:
-                step(room.state, action_from_dict(a))
-                room.action_log.append(a)
-            if snap.get("state_hash") and state_hash(room.state) != snap["state_hash"]:
-                raise RoomError(f"replay mismatch restoring room {room.id}")
+            actions = snap["actions"]
+            expected = snap.get("state_hash")
+            cp = snap.get("checkpoint")
+            state = None
+            if cp and 0 < cp["at"] <= len(actions):
+                try:
+                    state = GameState.from_dict(cp["state"])
+                    for a in actions[cp["at"]:]:
+                        step(state, action_from_dict(a))
+                    if expected and state_hash(state) != expected:
+                        state = None
+                except Exception:
+                    state = None
+                if state is not None:
+                    room.checkpoint = cp
+            if state is None:
+                state = new_game(room.config, room.seed)
+                for a in actions:
+                    step(state, action_from_dict(a))
+                if expected and state_hash(state) != expected:
+                    raise RoomError(f"replay mismatch restoring room {room.id}")
+            room.state = state
+            room.action_log = list(actions)
             room._reset_deadline()
         return room
+
+
+def new_room(
+    room_id: str,
+    config: dict | GameConfig | None = None,
+    timeout: float | None = None,
+    timeout_consent: bool = False,
+    clock: Clock = time.monotonic,
+) -> Room:
+    """Build an empty lobby. Raises ValueError/TypeError for a bad config."""
+    if not isinstance(config, GameConfig):
+        config = GameConfig(**(config or {}))
+    kinds = ("event_window", "consent") if timeout_consent else ("event_window",)
+    return Room(id=room_id, config=config, clock=clock, timeout=timeout, timeout_kinds=kinds)
+
+
+def handle_client_message(room: Room, token: str, seat: int, data) -> list[Outbound]:
+    """Dispatch one decoded client WebSocket message; errors come back as messages to ``seat``."""
+
+    def err(message: str, code: str = "bad_request") -> list[Outbound]:
+        return [(seat, _error(message, code))]
+
+    if not isinstance(data, dict):
+        return err("message must be a JSON object")
+    kind = data.get("type")
+    try:
+        if kind == "action":
+            if not isinstance(data.get("action"), dict):
+                return err("missing action object")
+            return room.submit(token, data["action"])
+        if kind == "ready":
+            return room.set_ready(token, bool(data.get("ready", True)))
+        if kind == "start":
+            return room.start(token)
+        if kind == "chat":
+            return room.chat(token, data.get("text", ""))
+        if kind == "sync":
+            return room.sync(token)
+    except RoomError as e:
+        return err(str(e))
+    return err(f"unknown message type {kind!r}")
 
 
 def _error(message: str, code: str = "error") -> dict:
@@ -274,8 +360,14 @@ def _error(message: str, code: str = "error") -> dict:
 
 
 class RoomManager:
-    def __init__(self, clock: Clock = time.monotonic, storage_dir: str | Path | None = None):
+    def __init__(
+        self,
+        clock: Clock = time.monotonic,
+        storage_dir: str | Path | None = None,
+        checkpoint_every: int | None = CHECKPOINT_EVERY,
+    ):
         self.clock = clock
+        self.checkpoint_every = checkpoint_every
         self.rooms: dict[str, Room] = {}
         self.storage_dir = Path(storage_dir) if storage_dir else None
 
@@ -285,15 +377,10 @@ class RoomManager:
         timeout: float | None = None,
         timeout_consent: bool = False,
     ) -> Room:
-        if not isinstance(config, GameConfig):
-            config = GameConfig(**(config or {}))
-        room_id = secrets.token_hex(3)
-        while room_id in self.rooms:
-            room_id = secrets.token_hex(3)
-        kinds = ("event_window", "consent") if timeout_consent else ("event_window",)
-        room = Room(id=room_id, config=config, clock=self.clock, timeout=timeout,
-                    timeout_kinds=kinds)
-        self.rooms[room_id] = room
+        room = new_room(new_room_id(), config, timeout, timeout_consent, self.clock)
+        while room.id in self.rooms:
+            room.id = new_room_id()
+        self.rooms[room.id] = room
         return room
 
     def get(self, room_id: str) -> Room:
@@ -317,7 +404,7 @@ class RoomManager:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         path = self.storage_dir / f"{room.id}.json"
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(room.snapshot()))
+        tmp.write_text(json.dumps(room.snapshot(self.checkpoint_every)))
         tmp.replace(path)
 
     def load_all(self) -> int:

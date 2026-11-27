@@ -62,8 +62,14 @@ def test_bad_token_rejected():
 
     with TestClient(create_app(RoomManager())) as client:
         rid = client.post("/rooms").json()["room_id"]
-        with pytest.raises(WebSocketDisconnect), client.websocket_connect(f"/ws/{rid}?token=x"):
-            pass
+        with client.websocket_connect(f"/ws/{rid}?token=x") as ws:
+            with pytest.raises(WebSocketDisconnect) as exc:
+                ws.receive_json()
+            assert exc.value.code == 4401
+        with client.websocket_connect("/ws/nope?token=x") as ws:
+            with pytest.raises(WebSocketDisconnect) as exc:
+                ws.receive_json()
+            assert exc.value.code == 4401
 
 
 def test_meta_and_debug_and_index():

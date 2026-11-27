@@ -21,7 +21,7 @@ action log like any other.
 
 ## WebSocket `/ws/{room_id}?token=...`
 
-Invalid room/token: closed with code 4401. On connect the server sends the current `lobby`
+Invalid room/token: the socket is accepted and then closed with code 4401. On connect the server sends the current `lobby`
 message (before start) or `state` message (after start).
 
 ### Client to server
@@ -50,5 +50,11 @@ message (before start) or `state` message (after start).
 ## Persistence
 
 A snapshot is `{id, config, timeout, seats (name, token), seed, actions: [action dicts],
-state_hash}`. `Room.restore` replays the log through the engine and checks the SHA-256 of the
-state JSON, raising `RoomError` on a mismatch.
+state_hash, checkpoint?}`. `checkpoint` is `{"at": n, "state": GameState.to_dict()}`: the state
+after the first `n` actions, refreshed every 25 actions when the caller asks for it
+(`Room.snapshot(checkpoint_every=...)`). `Room.restore` loads the checkpoint and replays only
+`actions[n:]` (or replays everything from the seed when there is none, or when the checkpoint
+fails to reproduce the hash) and checks the SHA-256 of the state JSON, raising `RoomError` on a
+mismatch. Snapshots without `checkpoint` remain valid.
+
+The Cloudflare Worker backend (`docs/CLOUDFLARE.md`) implements this same protocol.
