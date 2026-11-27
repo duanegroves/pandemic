@@ -11,7 +11,7 @@ import {
   treatByColor,
 } from "../lib/actions";
 import { remaining } from "../lib/countdown";
-import { DISEASE_FILL } from "../lib/theme";
+import { DISEASE_FILL, ROLE_STYLE } from "../lib/theme";
 import { MAP_H, MAP_W, cityPos } from "../lib/geo";
 import { useCityMap } from "../meta";
 import type { RoomView } from "../useRoomSocket";
@@ -363,7 +363,11 @@ export function Game({ view, send, sendAction, onLeave }: Props) {
             </section>
             <section className="panel">
               <h3>Chat</h3>
-              <ChatBox chat={view.chat} send={send} />
+              <ChatBox
+                chat={view.chat}
+                send={send}
+                colorOf={(seat) => ROLE_STYLE[obs.players[seat]?.role ?? ""]?.fill}
+              />
             </section>
           </div>
         </div>

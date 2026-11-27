@@ -16,8 +16,21 @@ export function EventLog({ log }: { log: LogEntry[] }) {
   );
 }
 
-export function ChatBox({ chat, send }: { chat: ChatMsg[]; send: (m: object) => boolean }) {
+/**
+ * Chat with the input on top and the newest message right below it, so your eye barely moves
+ * after sending. `colorOf(seat)` gives the speaker's player colour for the bar beside each message.
+ */
+export function ChatBox({
+  chat,
+  send,
+  colorOf,
+}: {
+  chat: ChatMsg[];
+  send: (m: object) => boolean;
+  colorOf?: (seat: number) => string | undefined;
+}) {
   const [text, setText] = useState("");
+
   const submit = (ev: FormEvent) => {
     ev.preventDefault();
     if (!text.trim()) return;
@@ -25,18 +38,21 @@ export function ChatBox({ chat, send }: { chat: ChatMsg[]; send: (m: object) => 
   };
   return (
     <div className="chat">
-      <ul className="log chatlog">
-        {chat.length === 0 && <li className="muted">No messages.</li>}
-        {[...chat].reverse().map((m, i) => (
-          <li key={chat.length - i}>
-            <strong>{m.name}:</strong> {m.text}
-          </li>
-        ))}
-      </ul>
       <form className="row" onSubmit={submit}>
         <input className="grow" value={text} onChange={(e) => setText(e.target.value)} placeholder="Say something..." />
         <button>Send</button>
       </form>
+      <ul className="log chatlog">
+        {chat.length === 0 && <li className="muted">No messages.</li>}
+        {[...chat].reverse().map((m, i) => {
+          const color = colorOf?.(m.seat);
+          return (
+            <li key={chat.length - i} style={color ? { borderLeftColor: color } : undefined}>
+              <strong>{m.name}:</strong> {m.text}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
