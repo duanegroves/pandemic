@@ -14,5 +14,14 @@
   },
   "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "RoomDO" }] },
   // Keep v1 as-is: it is the migration the first deploy already applied to this Worker name; do not renumber it.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO"] }],
+  // Workers Logs: every request/WebSocket event and any errors, viewable in the dashboard's
+  // Observability tab. This file is the source of truth: a deploy applies it over any dashboard
+  // change. See docs/CLOUDFLARE.md.
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
+  }
 }

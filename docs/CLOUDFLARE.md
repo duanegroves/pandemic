@@ -155,6 +155,21 @@ the first `wrangler deploy` offers to create when run interactively.
 - Hibernation: ping/pong are answered without waking the DO; attachments are limited to 16 KiB;
   alarms are one per DO and retried with backoff on uncaught exceptions.
 
+## Logs and observability
+
+Workers Logs are on (`observability.logs` in `cloudflare/worker/wrangler.jsonc`): each request,
+WebSocket message and alarm is recorded with its outcome and any exception, and can be searched
+in the Cloudflare dashboard under Workers & Pages → `pandemic-game` → Observability. The free
+plan includes a daily allowance of log events; check the dashboard for the current limit and
+retention.
+
+`wrangler.jsonc` is the source of truth: `pywrangler deploy` applies it, overwriting changes made
+in the dashboard. If you change observability settings in the dashboard, copy them into
+`wrangler.jsonc` (the dashboard shows the matching snippet) or the next deploy will undo them.
+
+For live debugging, `npx wrangler tail pandemic-game --format json` streams events as they happen,
+including `cpuTime` per event.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
